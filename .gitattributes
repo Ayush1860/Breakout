@@ -1,0 +1,2 @@
+# Files are edited on Windows but built on Linux/WSL and CI: keep LF everywhere.
+* text=auto eol=lf
