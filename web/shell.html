@@ -27,6 +27,12 @@
         var Module = {
             canvas: document.getElementById('canvas'),
         };
+        // Game keys shouldn't scroll the page when the window is small.
+        window.addEventListener('keydown', function (e) {
+            if ([' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) !== -1) {
+                e.preventDefault();
+            }
+        });
     </script>
     {{{ SCRIPT }}}
 </body>

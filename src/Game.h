@@ -19,6 +19,9 @@ public:
     void update(float dt);
     void draw() const;
 
+    // Pauses if a game is in progress (e.g. the window lost focus).
+    void pause();
+
 private:
     // Flow
     void newGame();

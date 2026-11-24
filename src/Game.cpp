@@ -57,7 +57,7 @@ void Game::handleInput()
         break;
     case GameState::Playing:
         if (IsKeyPressed(KEY_P)) {
-            state_ = GameState::Paused;
+            pause();
         } else if (IsKeyPressed(KEY_SPACE) && !ball_.isLaunched()) {
             launchBall();
         }
@@ -79,6 +79,13 @@ void Game::handleInput()
 }
 
 // ----------------------------------------------------------------- flow ----
+
+void Game::pause()
+{
+    if (state_ == GameState::Playing) {
+        state_ = GameState::Paused;
+    }
+}
 
 void Game::update(float dt)
 {
