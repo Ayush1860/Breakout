@@ -1,7 +1,10 @@
 #pragma once
 
+#include "Constants.h"
 #include "Entity.h"
 #include "raylib.h"
+
+#include <array>
 
 class Ball : public Entity {
 public:
@@ -29,8 +32,16 @@ public:
     void setDirection(Vector2 dir);
 
 private:
+    void recordTrail(float dt);
+
     Vector2 pos_{};
     Vector2 vel_{};
     float speed_;
     bool launched_ = false;
+
+    // Recent positions, newest first. Sampled on a timer rather than every
+    // physics step so the trail's length doesn't depend on the step rate.
+    std::array<Vector2, cfg::TRAIL_LENGTH> trail_{};
+    int trailCount_ = 0;
+    float trailTimer_ = 0.0f;
 };

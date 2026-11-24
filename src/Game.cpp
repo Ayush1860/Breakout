@@ -3,6 +3,7 @@
 #include "Collision.h"
 #include "Constants.h"
 #include "Level.h"
+#include "Storage.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,7 @@ int drawLabelValue(const char* label, int value, int x, int y, Color valueColor)
 
 Game::Game()
     : lives_(cfg::START_LIVES)
+    , bestScore_(storage::loadHighScore())
     , rng_(std::random_device{}())
 {
     startLevel(0);  // the menu shows level 1 behind the title
@@ -92,13 +94,16 @@ void Game::update(float dt)
     switch (state_) {
     case GameState::Playing:
         updatePlaying(dt);
+        updateEffects(dt);
         break;
-    case GameState::Menu:
-    case GameState::Paused:
     case GameState::LevelClear:
     case GameState::GameOver:
     case GameState::Win:
-        break;  // the world is frozen
+        updateEffects(dt);  // let the last burst and shake settle
+        break;
+    case GameState::Menu:
+    case GameState::Paused:
+        break;  // everything frozen
     }
 }
 
@@ -114,6 +119,9 @@ void Game::startLevel(int index)
 {
     level_ = index;
     bricks_ = level::load(index);
+    particles_.clear();
+    shake_ = 0.0f;
+    shakeOffset_ = {0.0f, 0.0f};
     paddle_.reset();
     ball_.reset();
     ball_.setSpeed(ballSpeedForLevel(index));
@@ -145,6 +153,7 @@ void Game::updatePlaying(float dt)
 void Game::loseLife()
 {
     --lives_;
+    addShake(cfg::SHAKE_LIFE_LOST);
     if (lives_ <= 0) {
         state_ = GameState::GameOver;
         return;
@@ -225,15 +234,18 @@ void Game::collidePaddle()
 void Game::collideBricks()
 {
     const Vector2 pos = ball_.position();
+    const Vector2 vel = ball_.velocity();
     const float r = cfg::BALL_RADIUS;
 
     // Resolve at most one brick per step. When the ball touches two bricks
     // at once (e.g. in the gap between them) only the closest one counts,
     // so a single hit can't break two bricks or bounce the ball twice.
+    // Bricks the ball is already leaving are skipped: it can still overlap
+    // one it was bounced off last step, and that one isn't a new hit.
     Brick* closest = nullptr;
     float closestDistSq = r * r;
     for (Brick& brick : bricks_) {
-        if (!brick.alive()) {
+        if (!brick.alive() || !collision::movingToward(pos, vel, brick.rect)) {
             continue;
         }
         const float d = collision::distanceSq(pos, brick.rect);
@@ -249,11 +261,11 @@ void Game::collideBricks()
 
 void Game::hitBrick(Brick& brick)
 {
-    // Push the ball out along the axis it entered through, and make the
+    // Push the ball out through the face it entered by, and make the
     // velocity on that axis point away from the brick.
-    const Vector2 push = collision::separation(ball_.position(), cfg::BALL_RADIUS, brick.rect);
     Vector2 pos = ball_.position();
     Vector2 vel = ball_.velocity();
+    const Vector2 push = collision::separation(pos, cfg::BALL_RADIUS, brick.rect, vel);
     pos.x += push.x;
     pos.y += push.y;
     if (push.x != 0.0f) {
@@ -265,9 +277,20 @@ void Game::hitBrick(Brick& brick)
     ball_.setDirection(vel);
 
     --brick.hp;
-    if (!brick.alive()) {
-        score_ += cfg::SCORE_PER_HP * brick.maxHp;
-        bestScore_ = std::max(bestScore_, score_);
+    brick.flash = cfg::HIT_FLASH_TIME;
+    if (brick.alive()) {
+        return;
+    }
+
+    score_ += cfg::SCORE_PER_HP * brick.maxHp;
+    particles_.spawnBurst(brick.rect, brickColor(brick.maxHp, false), rng_);
+    addShake(cfg::SHAKE_BRICK_BREAK);
+
+    // Saved as soon as it's beaten (a tiny write), so reloading or closing
+    // the page mid-game never loses it.
+    if (score_ > bestScore_) {
+        bestScore_ = score_;
+        storage::saveHighScore(bestScore_);
     }
 }
 
@@ -276,14 +299,37 @@ bool Game::allBricksCleared() const
     return std::none_of(bricks_.begin(), bricks_.end(), [](const Brick& b) { return b.alive(); });
 }
 
+// -------------------------------------------------------------- effects ----
+
+void Game::updateEffects(float dt)
+{
+    particles_.update(dt);
+    for (Brick& brick : bricks_) {
+        brick.flash = std::max(0.0f, brick.flash - dt);
+    }
+
+    // Shake: jitter the camera in a random direction, shrinking each step.
+    // Decaying per fixed step (not per rendered frame) keeps it FPS-independent.
+    shake_ *= cfg::SHAKE_DECAY;
+    if (shake_ < cfg::SHAKE_CUTOFF) {
+        shake_ = 0.0f;
+    }
+    std::uniform_real_distribution<float> angle(0.0f, 2.0f * PI);
+    const float a = angle(rng_);
+    shakeOffset_ = {std::cos(a) * shake_, std::sin(a) * shake_};
+}
+
+void Game::addShake(float amount)
+{
+    shake_ = std::max(shake_, amount);
+}
+
 // -------------------------------------------------------------- drawing ----
 
 void Game::draw() const
 {
     drawHud();
-    drawBricks();
-    paddle_.draw();
-    ball_.draw();
+    drawWorld();
 
     switch (state_) {
     case GameState::Menu:
@@ -307,6 +353,21 @@ void Game::draw() const
     }
 
     drawControlsHint();  // on top of any overlay
+}
+
+// The play field shakes; the HUD, overlays and hint stay put.
+void Game::drawWorld() const
+{
+    Camera2D camera{};
+    camera.offset = shakeOffset_;
+    camera.zoom = 1.0f;
+
+    BeginMode2D(camera);
+    drawBricks();
+    particles_.draw();
+    paddle_.draw();
+    ball_.draw();
+    EndMode2D();
 }
 
 void Game::drawBricks() const

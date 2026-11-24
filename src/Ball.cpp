@@ -14,12 +14,18 @@ void Ball::update(float dt)
     if (!launched_) {
         return;
     }
+    recordTrail(dt);
     pos_.x += vel_.x * dt;
     pos_.y += vel_.y * dt;
 }
 
 void Ball::draw() const
 {
+    // Oldest trail circle is the faintest and smallest.
+    for (int i = trailCount_ - 1; i >= 0; --i) {
+        const float t = 1.0f - static_cast<float>(i + 1) / (cfg::TRAIL_LENGTH + 1);
+        DrawCircleV(trail_[i], cfg::BALL_RADIUS * t, Fade(cfg::COL_BALL, cfg::TRAIL_ALPHA * t));
+    }
     DrawCircleV(pos_, cfg::BALL_RADIUS, cfg::COL_BALL);
 }
 
@@ -27,6 +33,24 @@ void Ball::reset()
 {
     vel_ = {0.0f, 0.0f};
     launched_ = false;
+    trailCount_ = 0;
+    trailTimer_ = 0.0f;
+}
+
+void Ball::recordTrail(float dt)
+{
+    trailTimer_ += dt;
+    if (trailTimer_ < cfg::TRAIL_SAMPLE_TIME) {
+        return;
+    }
+    trailTimer_ -= cfg::TRAIL_SAMPLE_TIME;
+    for (int i = cfg::TRAIL_LENGTH - 1; i > 0; --i) {
+        trail_[i] = trail_[i - 1];
+    }
+    trail_[0] = pos_;
+    if (trailCount_ < cfg::TRAIL_LENGTH) {
+        ++trailCount_;
+    }
 }
 
 void Ball::launch(float angle)

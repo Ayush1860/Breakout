@@ -3,6 +3,7 @@
 #include "Ball.h"
 #include "Brick.h"
 #include "Paddle.h"
+#include "Particles.h"
 
 #include <random>
 #include <vector>
@@ -39,7 +40,12 @@ private:
     void hitBrick(Brick& brick);
     bool allBricksCleared() const;
 
+    // Effects
+    void updateEffects(float dt);
+    void addShake(float amount);
+
     // Drawing
+    void drawWorld() const;
     void drawBricks() const;
     void drawHud() const;
     void drawControlsHint() const;
@@ -49,6 +55,9 @@ private:
     Paddle paddle_;
     Ball ball_;
     std::vector<Brick> bricks_;
+    Particles particles_;
+    float shake_ = 0.0f;        // current shake strength (px)
+    Vector2 shakeOffset_{};     // this step's camera offset
     int level_ = 0;      // 0-based
     int lives_ = 0;
     int score_ = 0;

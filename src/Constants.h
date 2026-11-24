@@ -66,8 +66,26 @@ constexpr int TITLE_FONT_SIZE    = 40;
 constexpr int SUBTITLE_FONT_SIZE = 20;
 constexpr int TITLE_GAP          = 16;   // between title and subtitle
 
+// Effects
+constexpr int   PARTICLE_POOL_SIZE  = 256;
+constexpr int   PARTICLES_PER_BRICK = 12;
+constexpr float PARTICLE_LIFE       = 0.5f;    // s
+constexpr float PARTICLE_MIN_SPEED  = 60.0f;   // px/s
+constexpr float PARTICLE_MAX_SPEED  = 220.0f;  // px/s
+constexpr float PARTICLE_GRAVITY    = 600.0f;  // px/s^2
+constexpr float PARTICLE_SIZE       = 4.0f;    // px
+constexpr float SHAKE_BRICK_BREAK   = 6.0f;    // px
+constexpr float SHAKE_LIFE_LOST     = 12.0f;   // px
+constexpr float SHAKE_DECAY         = 0.9f;    // x this per physics step
+constexpr float SHAKE_CUTOFF        = 0.1f;    // px; below this the shake stops
+constexpr float HIT_FLASH_TIME      = 0.06f;   // s
+constexpr int   TRAIL_LENGTH        = 3;       // past positions drawn behind the ball
+constexpr float TRAIL_SAMPLE_TIME   = 1.0f / 60.0f;  // s between trail samples
+constexpr float TRAIL_ALPHA         = 0.3f;    // opacity of the newest trail circle
+
 // Palette
 constexpr Color COL_BACKGROUND      {0x2C, 0x2C, 0x2A, 0xFF};
+constexpr Color COL_FLASH           {0xFF, 0xFF, 0xFF, 0xFF};
 constexpr Color COL_OVERLAY         {0x2C, 0x2C, 0x2A, 0xD0};  // background, mostly opaque
 constexpr Color COL_HUD_DIVIDER     {0x44, 0x44, 0x41, 0xFF};
 constexpr Color COL_TEXT            {0xF1, 0xEF, 0xE8, 0xFF};
