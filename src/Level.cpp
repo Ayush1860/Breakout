@@ -12,7 +12,7 @@ namespace {
 // '0' means no brick.
 using Layout = std::array<std::string_view, cfg::BRICK_ROWS>;
 
-constexpr std::array<Layout, 1> LAYOUTS{{
+constexpr std::array<Layout, cfg::LEVEL_COUNT> LAYOUTS{{
     // Level 1: full grid, tougher bricks at the top
     {"3333333333",
      "3333333333",
@@ -20,6 +20,20 @@ constexpr std::array<Layout, 1> LAYOUTS{{
      "2222222222",
      "1111111111",
      "1111111111"},
+    // Level 2: diamond, hard shell around a soft core
+    {"0000330000",
+     "0003223000",
+     "0032112300",
+     "0032112300",
+     "0003223000",
+     "0000330000"},
+    // Level 3: checkerboard under a 3-HP top border
+    {"3333333333",
+     "0202020202",
+     "1010101010",
+     "0202020202",
+     "1010101010",
+     "0202020202"},
 }};
 
 // Typos in a layout are caught by the compiler, not at runtime.

@@ -21,6 +21,9 @@ public:
     void setPosition(Vector2 pos) { pos_ = pos; }
     Vector2 velocity() const { return vel_; }
 
+    // Keeps the current direction if the ball is moving.
+    void setSpeed(float speed);
+
     // Points the ball along dir at its current speed. Every bounce goes
     // through here so the anti-stuck rule is applied in one place.
     void setDirection(Vector2 dir);

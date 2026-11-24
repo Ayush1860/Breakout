@@ -7,36 +7,121 @@
 #include <algorithm>
 #include <cmath>
 
-Game::Game()
-    : bricks_(level::load(0))
-    , rng_(std::random_device{}())
+namespace {
+
+float ballSpeedForLevel(int level)
 {
-    holdBallOnPaddle();
+    const float speed = cfg::BALL_START_SPEED * std::pow(cfg::BALL_SPEED_LEVEL_MULT, static_cast<float>(level));
+    return std::min(speed, cfg::BALL_MAX_SPEED);
 }
 
-void Game::readInput()
+void drawTextCentered(const char* text, int y, int fontSize, Color color)
+{
+    const int width = MeasureText(text, fontSize);
+    DrawText(text, (cfg::SCREEN_W - width) / 2, y, fontSize, color);
+}
+
+// Draws "LABEL value" at x and returns the x just past the value.
+int drawLabelValue(const char* label, int value, int x, int y, Color valueColor)
+{
+    DrawText(label, x, y, cfg::HUD_FONT_SIZE, cfg::COL_TEXT_MUTED);
+    x += MeasureText(label, cfg::HUD_FONT_SIZE) + cfg::HUD_LABEL_GAP;
+    const char* text = TextFormat("%d", value);
+    DrawText(text, x, y, cfg::HUD_FONT_SIZE, valueColor);
+    return x + MeasureText(text, cfg::HUD_FONT_SIZE);
+}
+
+} // namespace
+
+Game::Game()
+    : lives_(cfg::START_LIVES)
+    , rng_(std::random_device{}())
+{
+    startLevel(0);  // the menu shows level 1 behind the title
+}
+
+// ---------------------------------------------------------------- input ----
+
+void Game::handleInput()
 {
     paddleDir_ = 0.0f;
     if (IsKeyDown(KEY_LEFT))  paddleDir_ -= 1.0f;
     if (IsKeyDown(KEY_RIGHT)) paddleDir_ += 1.0f;
 
-    // A key press is a one-frame event, but a frame may run zero physics
-    // steps. Latch it here so update() can't miss it.
-    launchRequested_ = launchRequested_ || IsKeyPressed(KEY_SPACE);
+    // Key presses are one-frame events, but a frame can run zero or several
+    // physics steps. Handling them here, once per frame, means a press is
+    // never missed and never applied twice.
+    switch (state_) {
+    case GameState::Menu:
+        if (IsKeyPressed(KEY_SPACE)) newGame();
+        break;
+    case GameState::Playing:
+        if (IsKeyPressed(KEY_P)) {
+            state_ = GameState::Paused;
+        } else if (IsKeyPressed(KEY_SPACE) && !ball_.isLaunched()) {
+            launchBall();
+        }
+        break;
+    case GameState::Paused:
+        if (IsKeyPressed(KEY_P)) state_ = GameState::Playing;
+        break;
+    case GameState::LevelClear:
+        if (IsKeyPressed(KEY_SPACE)) {
+            startLevel(level_ + 1);
+            state_ = GameState::Playing;
+        }
+        break;
+    case GameState::GameOver:
+    case GameState::Win:
+        if (IsKeyPressed(KEY_R)) newGame();
+        break;
+    }
 }
 
+// ----------------------------------------------------------------- flow ----
+
 void Game::update(float dt)
+{
+    switch (state_) {
+    case GameState::Playing:
+        updatePlaying(dt);
+        break;
+    case GameState::Menu:
+    case GameState::Paused:
+    case GameState::LevelClear:
+    case GameState::GameOver:
+    case GameState::Win:
+        break;  // the world is frozen
+    }
+}
+
+void Game::newGame()
+{
+    score_ = 0;
+    lives_ = cfg::START_LIVES;
+    startLevel(0);
+    state_ = GameState::Playing;
+}
+
+void Game::startLevel(int index)
+{
+    level_ = index;
+    bricks_ = level::load(index);
+    paddle_.reset();
+    ball_.reset();
+    ball_.setSpeed(ballSpeedForLevel(index));
+    holdBallOnPaddle();
+}
+
+void Game::updatePlaying(float dt)
 {
     paddle_.setDirection(paddleDir_);
     paddle_.update(dt);
 
     if (!ball_.isLaunched()) {
         holdBallOnPaddle();
-        if (launchRequested_) {
-            launchBall();
-        }
+        return;
     }
-    launchRequested_ = false;
 
     ball_.update(dt);
     collideWalls();
@@ -44,18 +129,30 @@ void Game::update(float dt)
     collidePaddle();
 
     if (ball_.position().y - cfg::BALL_RADIUS > cfg::SCREEN_H) {
-        ball_.reset();
-        holdBallOnPaddle();
+        loseLife();
+    } else if (allBricksCleared()) {
+        finishLevel();
     }
 }
 
-void Game::draw() const
+void Game::loseLife()
 {
-    drawBricks();
-    paddle_.draw();
-    ball_.draw();
-    drawHud();
+    --lives_;
+    if (lives_ <= 0) {
+        state_ = GameState::GameOver;
+        return;
+    }
+    ball_.reset();
+    holdBallOnPaddle();
 }
+
+void Game::finishLevel()
+{
+    const bool lastLevel = level_ + 1 >= level::count();
+    state_ = lastLevel ? GameState::Win : GameState::LevelClear;
+}
+
+// ------------------------------------------------------ ball & collision ----
 
 void Game::holdBallOnPaddle()
 {
@@ -86,8 +183,8 @@ void Game::collideWalls()
         vel.x = -std::abs(vel.x);
         bounced = true;
     }
-    if (pos.y - r < 0.0f) {
-        pos.y = r;
+    if (pos.y - r < cfg::PLAY_TOP) {
+        pos.y = cfg::PLAY_TOP + r;
         vel.y = std::abs(vel.y);
         bounced = true;
     }
@@ -163,7 +260,46 @@ void Game::hitBrick(Brick& brick)
     --brick.hp;
     if (!brick.alive()) {
         score_ += cfg::SCORE_PER_HP * brick.maxHp;
+        bestScore_ = std::max(bestScore_, score_);
     }
+}
+
+bool Game::allBricksCleared() const
+{
+    return std::none_of(bricks_.begin(), bricks_.end(), [](const Brick& b) { return b.alive(); });
+}
+
+// -------------------------------------------------------------- drawing ----
+
+void Game::draw() const
+{
+    drawHud();
+    drawBricks();
+    paddle_.draw();
+    ball_.draw();
+
+    switch (state_) {
+    case GameState::Menu:
+        drawOverlay("BREAKOUT", cfg::COL_TEXT, "Press SPACE to start");
+        break;
+    case GameState::Playing:
+        break;
+    case GameState::Paused:
+        drawOverlay("PAUSED", cfg::COL_TEXT, "Press P to resume");
+        break;
+    case GameState::LevelClear:
+        drawOverlay(TextFormat("LEVEL %d CLEAR", level_ + 1), cfg::COL_SCORE,
+                    TextFormat("Press SPACE for level %d", level_ + 2));
+        break;
+    case GameState::GameOver:
+        drawOverlay("GAME OVER", cfg::COL_ALERT, TextFormat("Score %d  -  Press R to restart", score_));
+        break;
+    case GameState::Win:
+        drawOverlay("YOU WIN", cfg::COL_SCORE, TextFormat("Final score %d  -  Press R to play again", score_));
+        break;
+    }
+
+    drawControlsHint();  // on top of any overlay
 }
 
 void Game::drawBricks() const
@@ -177,5 +313,39 @@ void Game::drawBricks() const
 
 void Game::drawHud() const
 {
-    DrawText(TextFormat("SCORE %d", score_), cfg::HUD_MARGIN, cfg::HUD_MARGIN, cfg::HUD_FONT_SIZE, cfg::COL_TEXT);
+    const int y = static_cast<int>((cfg::HUD_HEIGHT - cfg::HUD_FONT_SIZE) / 2.0f);
+
+    // Left: score and best
+    int x = drawLabelValue("SCORE", score_, cfg::HUD_MARGIN, y, cfg::COL_SCORE);
+    drawLabelValue("BEST", bestScore_, x + cfg::HUD_ITEM_GAP, y, cfg::COL_TEXT);
+
+    // Centre: level
+    drawTextCentered(TextFormat("LEVEL %d / %d", level_ + 1, level::count()), y, cfg::HUD_FONT_SIZE, cfg::COL_TEXT);
+
+    // Right: one dot per remaining life
+    const float dotY = cfg::HUD_HEIGHT / 2.0f;
+    for (int i = 0; i < lives_; ++i) {
+        const float dotX = cfg::SCREEN_W - cfg::HUD_MARGIN - cfg::LIFE_DOT_RADIUS - i * cfg::LIFE_DOT_SPACING;
+        DrawCircleV({dotX, dotY}, cfg::LIFE_DOT_RADIUS, cfg::COL_ALERT);
+    }
+
+    DrawLineV({0.0f, cfg::HUD_HEIGHT}, {static_cast<float>(cfg::SCREEN_W), cfg::HUD_HEIGHT}, cfg::COL_HUD_DIVIDER);
+}
+
+void Game::drawControlsHint() const
+{
+    // raylib's built-in font is ASCII-only, so arrows are spelled out.
+    drawTextCentered("LEFT / RIGHT  move      SPACE  launch      P  pause",
+                     cfg::SCREEN_H - cfg::HINT_FONT_SIZE - cfg::HINT_MARGIN, cfg::HINT_FONT_SIZE, cfg::COL_TEXT_MUTED);
+}
+
+void Game::drawOverlay(const char* title, Color titleColor, const char* subtitle) const
+{
+    const float playH = cfg::SCREEN_H - cfg::PLAY_TOP;
+    DrawRectangleRec({0.0f, cfg::PLAY_TOP, static_cast<float>(cfg::SCREEN_W), playH}, cfg::COL_OVERLAY);
+
+    const int blockH = cfg::TITLE_FONT_SIZE + cfg::TITLE_GAP + cfg::SUBTITLE_FONT_SIZE;
+    const int top = static_cast<int>(cfg::PLAY_TOP + (playH - blockH) / 2.0f);
+    drawTextCentered(title, top, cfg::TITLE_FONT_SIZE, titleColor);
+    drawTextCentered(subtitle, top + cfg::TITLE_FONT_SIZE + cfg::TITLE_GAP, cfg::SUBTITLE_FONT_SIZE, cfg::COL_TEXT_MUTED);
 }

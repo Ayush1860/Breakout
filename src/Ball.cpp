@@ -35,6 +35,14 @@ void Ball::launch(float angle)
     setDirection({std::sin(angle), -std::cos(angle)});
 }
 
+void Ball::setSpeed(float speed)
+{
+    speed_ = speed;
+    if (launched_) {
+        setDirection(vel_);
+    }
+}
+
 void Ball::setDirection(Vector2 dir)
 {
     const float len = std::hypot(dir.x, dir.y);

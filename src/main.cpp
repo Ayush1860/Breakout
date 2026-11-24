@@ -24,7 +24,7 @@ void frame()
 {
     accumulator += std::min(GetFrameTime(), cfg::MAX_FRAME_TIME);
 
-    game->readInput();
+    game->handleInput();
     while (accumulator >= cfg::FIXED_DT) {
         game->update(cfg::FIXED_DT);
         accumulator -= cfg::FIXED_DT;

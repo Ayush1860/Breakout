@@ -42,16 +42,38 @@ constexpr float BRICK_TOP    = 80.0f;
 constexpr float BRICK_LEFT   = (SCREEN_W - (BRICK_COLS * BRICK_W + (BRICK_COLS - 1) * BRICK_GAP)) / 2.0f;
 constexpr int   BRICK_MAX_HP = 3;
 
-// Scoring
-constexpr int SCORE_PER_HP = 10;  // a brick is worth SCORE_PER_HP * maxHp
+// Rules
+constexpr int   SCORE_PER_HP          = 10;    // a brick is worth SCORE_PER_HP * maxHp
+constexpr int   START_LIVES           = 3;
+constexpr int   LEVEL_COUNT           = 3;
+constexpr float BALL_SPEED_LEVEL_MULT = 1.08f; // ball speed x this per level, capped at BALL_MAX_SPEED
 
-// HUD
-constexpr int HUD_FONT_SIZE = 20;
-constexpr int HUD_MARGIN    = 16;
+// HUD bar across the top; the ball bounces off its bottom edge.
+constexpr float HUD_HEIGHT       = SCREEN_H * 0.09f;
+constexpr float PLAY_TOP         = HUD_HEIGHT;
+constexpr int   HUD_FONT_SIZE    = 20;
+constexpr int   HUD_MARGIN       = 16;
+constexpr int   HUD_ITEM_GAP     = 32;   // between "SCORE n" and "BEST n"
+constexpr int   HUD_LABEL_GAP    = 8;    // between a label and its value
+constexpr float LIFE_DOT_RADIUS  = 6.0f;
+constexpr float LIFE_DOT_SPACING = 18.0f;
+static_assert(BRICK_TOP > HUD_HEIGHT, "bricks overlap the HUD");
+
+// Text
+constexpr int HINT_FONT_SIZE     = 10;
+constexpr int HINT_MARGIN        = 6;    // from the bottom of the screen
+constexpr int TITLE_FONT_SIZE    = 40;
+constexpr int SUBTITLE_FONT_SIZE = 20;
+constexpr int TITLE_GAP          = 16;   // between title and subtitle
 
 // Palette
 constexpr Color COL_BACKGROUND      {0x2C, 0x2C, 0x2A, 0xFF};
+constexpr Color COL_OVERLAY         {0x2C, 0x2C, 0x2A, 0xD0};  // background, mostly opaque
+constexpr Color COL_HUD_DIVIDER     {0x44, 0x44, 0x41, 0xFF};
 constexpr Color COL_TEXT            {0xF1, 0xEF, 0xE8, 0xFF};
+constexpr Color COL_TEXT_MUTED      {0x88, 0x87, 0x80, 0xFF};
+constexpr Color COL_SCORE           {0xFA, 0xC7, 0x75, 0xFF};
+constexpr Color COL_ALERT           {0xF0, 0x99, 0x7B, 0xFF};  // lives, game over
 constexpr Color COL_PADDLE          {0x85, 0xB7, 0xEB, 0xFF};
 constexpr Color COL_BALL            {0xF1, 0xEF, 0xE8, 0xFF};
 constexpr Color COL_BRICK_3         {0xD8, 0x5A, 0x30, 0xFF};
