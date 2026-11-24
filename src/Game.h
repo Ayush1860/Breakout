@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Ball.h"
+#include "Brick.h"
 #include "Paddle.h"
 
 #include <random>
+#include <vector>
 
 class Game {
 public:
@@ -20,9 +22,15 @@ private:
     void launchBall();
     void collideWalls();
     void collidePaddle();
+    void collideBricks();
+    void hitBrick(Brick& brick);
+    void drawBricks() const;
+    void drawHud() const;
 
     Paddle paddle_;
     Ball ball_;
+    std::vector<Brick> bricks_;
+    int score_ = 0;
     std::mt19937 rng_;
 
     // Input latched by readInput() and consumed by update().

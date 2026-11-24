@@ -1,12 +1,15 @@
 #include "Game.h"
 
+#include "Collision.h"
 #include "Constants.h"
+#include "Level.h"
 
 #include <algorithm>
 #include <cmath>
 
 Game::Game()
-    : rng_(std::random_device{}())
+    : bricks_(level::load(0))
+    , rng_(std::random_device{}())
 {
     holdBallOnPaddle();
 }
@@ -37,6 +40,7 @@ void Game::update(float dt)
 
     ball_.update(dt);
     collideWalls();
+    collideBricks();
     collidePaddle();
 
     if (ball_.position().y - cfg::BALL_RADIUS > cfg::SCREEN_H) {
@@ -47,8 +51,10 @@ void Game::update(float dt)
 
 void Game::draw() const
 {
+    drawBricks();
     paddle_.draw();
     ball_.draw();
+    drawHud();
 }
 
 void Game::holdBallOnPaddle()
@@ -98,7 +104,7 @@ void Game::collidePaddle()
         return;  // only bounce a ball that is coming down
     }
     const Vector2 pos = ball_.position();
-    if (!CheckCollisionCircleRec(pos, cfg::BALL_RADIUS, paddle_.rect())) {
+    if (!collision::circleRectOverlap(pos, cfg::BALL_RADIUS, paddle_.rect())) {
         return;
     }
 
@@ -110,4 +116,66 @@ void Game::collidePaddle()
 
     ball_.setPosition({pos.x, cfg::PADDLE_Y - cfg::BALL_RADIUS});
     ball_.setDirection({std::sin(angle), -std::cos(angle)});
+}
+
+void Game::collideBricks()
+{
+    const Vector2 pos = ball_.position();
+    const float r = cfg::BALL_RADIUS;
+
+    // Resolve at most one brick per step. When the ball touches two bricks
+    // at once (e.g. in the gap between them) only the closest one counts,
+    // so a single hit can't break two bricks or bounce the ball twice.
+    Brick* closest = nullptr;
+    float closestDistSq = r * r;
+    for (Brick& brick : bricks_) {
+        if (!brick.alive()) {
+            continue;
+        }
+        const float d = collision::distanceSq(pos, brick.rect);
+        if (d < closestDistSq) {
+            closestDistSq = d;
+            closest = &brick;
+        }
+    }
+    if (closest != nullptr) {
+        hitBrick(*closest);
+    }
+}
+
+void Game::hitBrick(Brick& brick)
+{
+    // Push the ball out along the axis it entered through, and make the
+    // velocity on that axis point away from the brick.
+    const Vector2 push = collision::separation(ball_.position(), cfg::BALL_RADIUS, brick.rect);
+    Vector2 pos = ball_.position();
+    Vector2 vel = ball_.velocity();
+    pos.x += push.x;
+    pos.y += push.y;
+    if (push.x != 0.0f) {
+        vel.x = std::copysign(vel.x, push.x);
+    } else {
+        vel.y = std::copysign(vel.y, push.y);
+    }
+    ball_.setPosition(pos);
+    ball_.setDirection(vel);
+
+    --brick.hp;
+    if (!brick.alive()) {
+        score_ += cfg::SCORE_PER_HP * brick.maxHp;
+    }
+}
+
+void Game::drawBricks() const
+{
+    for (const Brick& brick : bricks_) {
+        if (brick.alive()) {
+            DrawRectangleRec(brick.rect, brickColor(brick));
+        }
+    }
+}
+
+void Game::drawHud() const
+{
+    DrawText(TextFormat("SCORE %d", score_), cfg::HUD_MARGIN, cfg::HUD_MARGIN, cfg::HUD_FONT_SIZE, cfg::COL_TEXT);
 }

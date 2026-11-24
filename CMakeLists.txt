@@ -46,6 +46,7 @@ add_executable(breakout
     src/Game.cpp
     src/Paddle.cpp
     src/Ball.cpp
+    src/Level.cpp
 )
 
 target_link_libraries(breakout PRIVATE raylib)
