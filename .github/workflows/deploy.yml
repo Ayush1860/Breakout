@@ -1,0 +1,64 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # lets the job request a GitHub OIDC token to assume the AWS role
+  contents: read
+
+# Never run two deploys at once; a newer push waits for the current one.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      EMSDK_VERSION: 7.0.1   # keep in step with the local toolchain
+      DEPLOY_ENABLED: ${{ vars.S3_BUCKET != '' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Build (WebAssembly)
+        run: |
+          emcmake cmake -B build-web -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-web -j
+
+      - name: Collect site files
+        run: |
+          mkdir dist
+          cp build-web/index.html build-web/index.js build-web/index.wasm dist/
+
+      # The steps below are skipped until the AWS side exists (docs/aws-setup.md),
+      # so the workflow still works as a build check before then.
+      - name: Configure AWS credentials
+        if: env.DEPLOY_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Upload to S3
+        if: env.DEPLOY_ENABLED == 'true'
+        env:
+          BUCKET: ${{ vars.S3_BUCKET }}
+        run: |
+          aws s3 sync dist "s3://$BUCKET" --delete --exclude index.wasm
+          aws s3 cp dist/index.wasm "s3://$BUCKET/index.wasm" --content-type application/wasm
+
+      - name: Invalidate CloudFront cache
+        if: env.DEPLOY_ENABLED == 'true'
+        env:
+          DISTRIBUTION_ID: ${{ vars.CF_DISTRIBUTION_ID }}
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
