@@ -5,13 +5,17 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 # --- raylib -------------------------------------------------------------------
 include(FetchContent)
 
-# raylib's bundled GLFW declares an old cmake_minimum_required; CMake 4.x
-# refuses those unless a minimum policy version is provided.
+# raylib 5.5 declares an old cmake_minimum_required; CMake 4.x refuses
+# (or warns about) those unless a minimum policy version is provided.
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
-    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 endif()
 
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -39,6 +43,9 @@ endif()
 
 add_executable(breakout
     src/main.cpp
+    src/Game.cpp
+    src/Paddle.cpp
+    src/Ball.cpp
 )
 
 target_link_libraries(breakout PRIVATE raylib)
