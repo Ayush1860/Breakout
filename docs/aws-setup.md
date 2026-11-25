@@ -56,6 +56,20 @@ aws iam create-open-id-connect-provider \
 
 ## 4. Deploy role (least privilege)
 
+First get the exact OIDC subject GitHub will send. This repository uses GitHub's
+**immutable subject** format, in which the owner and repository carry their permanent
+numeric IDs (`repo:<owner>@<owner_id>/<repo>@<repo_id>:...`):
+
+```bash
+gh api repos/Ayush1860/Breakout/actions/oidc/customization/sub
+# → "use_immutable_subject": true, "sub_claim_prefix": "repo:Ayush1860@89765953/Breakout@1470315602"
+```
+
+The trust policy must match that prefix plus `:ref:refs/heads/main`. With IDs in the
+subject, the role stays tied to this exact repository, even if it is renamed or a new repo
+with the same name is created later. (Repos without immutable subjects send
+`repo:Ayush1860/Breakout:ref:refs/heads/main` instead.)
+
 `trust.json`: only pushes to `main` of this repository (and manual runs on `main`) can
 assume the role.
 
@@ -72,7 +86,7 @@ assume the role.
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:Ayush1860/Breakout:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:Ayush1860@89765953/Breakout@1470315602:ref:refs/heads/main"
         }
       }
     }
@@ -161,7 +175,7 @@ so the workflow is just a build check until then.
 
 | Symptom | Likely cause |
 |---|---|
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` doesn't match `repo:Ayush1860/Breakout:ref:refs/heads/main`, or the workflow ran from another branch |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` doesn't match what GitHub sent: the immutable form `repo:Ayush1860@89765953/Breakout@1470315602:ref:refs/heads/main` versus the legacy form, or the workflow ran from another branch. CloudTrail's failed `AssumeRoleWithWebIdentity` event shows the exact `sub` in `userIdentity.userName`. |
 | `AccessDeniedException` on `amplify:CreateDeployment` | Wrong app ID in the policy resource, or `AMPLIFY_APP_ID` doesn't match the app |
 | `curl` upload fails with 403 | The pre-signed upload URL expired; re-run the workflow |
 | Job ends `FAILED` | The zip doesn't have `index.html` at its root; check the *Package site* step's `unzip -l` listing |
