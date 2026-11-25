@@ -5,8 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Default for every job: read the repo, nothing else. Only the deploy job
+# below is allowed to request an OIDC token for AWS.
 permissions:
-  id-token: write   # lets the job request a GitHub OIDC token to assume the AWS role
   contents: read
 
 # Never run two deploys at once; a newer push waits for the current one.
@@ -14,19 +15,23 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# Third-party actions are pinned to full commit SHAs (a tag can be moved to
+# different code; a SHA can't). The comment says which release it is.
+
 jobs:
-  build-and-deploy:
+  # Runs all the build tooling (Emscripten, CMake, raylib's build scripts)
+  # with no AWS access: this job can't request an OIDC token.
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       EMSDK_VERSION: 7.0.1   # keep in step with the local toolchain
-      # Deploy only from main (the only ref the AWS role trusts) and once the app is configured.
-      DEPLOY_ENABLED: ${{ vars.AMPLIFY_APP_ID != '' && github.ref == 'refs/heads/main' }}
-
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: mymindstorm/setup-emsdk@v16
+      - uses: mymindstorm/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984  # v16
         with:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
@@ -42,16 +47,37 @@ jobs:
           zip -j site.zip build-web/index.html build-web/index.js build-web/index.wasm
           unzip -l site.zip
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: site
+          path: site.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  # Only this job can assume the AWS role. It runs no build code: it takes the
+  # finished zip from the build job and hands it to Amplify.
+  deploy:
+    needs: build
+    # Deploy only from main (the only ref the AWS role trusts) and once the app is configured.
+    if: vars.AMPLIFY_APP_ID != '' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write   # lets this job request a GitHub OIDC token to assume the AWS role
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: site
+
       - name: Configure AWS credentials
-        if: env.DEPLOY_ENABLED == 'true'
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd  # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           mask-aws-account-id: true
 
       - name: Deploy to Amplify Hosting
-        if: env.DEPLOY_ENABLED == 'true'
         env:
           APP_ID: ${{ vars.AMPLIFY_APP_ID }}
           BRANCH: main
