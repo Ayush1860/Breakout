@@ -5,7 +5,7 @@ hosted on AWS Amplify Hosting, with every push to `main` deployed by GitHub Acti
 
 **[▶ Play now](https://main.d1h0spgv1b4kq3.amplifyapp.com)**
 
-<!-- Gameplay GIF goes here: docs/gameplay.gif -->
+![Gameplay: the ball tunnels up a cleared column and breaks the top row, with hit flashes, particles and screen shake](docs/gameplay.gif)
 
 ## Controls
 
