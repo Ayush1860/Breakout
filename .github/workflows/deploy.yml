@@ -27,6 +27,16 @@ jobs:
     env:
       EMSDK_VERSION: 7.0.1   # keep in step with the local toolchain
     steps:
+      # Guard: fail if this job is ever given id-token: write. The build
+      # tooling must never be able to request AWS credentials.
+      - name: Check build job has no OIDC access
+        run: |
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::The build job can request OIDC tokens; it must not have id-token: write"
+            exit 1
+          fi
+          echo "OK: the build job cannot request OIDC tokens"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false

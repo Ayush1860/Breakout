@@ -126,15 +126,22 @@ copy and move operations, so a derived object can't be sliced through the base.
   step. Coming back to the tab never moves the ball.
 - The high score goes to `localStorage` through `EM_ASM`, wrapped in `try`/`catch` so that
   browsers with storage disabled still run the game.
+- The site is served with a strict **Content-Security-Policy** that only allows this site's own
+  scripts. To make that possible, the page has no inline scripts (setup lives in
+  [web/pre.js](web/pre.js), linked with `--pre-js`), and the build uses
+  `-sDYNAMIC_EXECUTION=0`, so the generated JavaScript never calls `eval`. The full header
+  set is in [web/custom-headers.yml](web/custom-headers.yml).
 
 ## Deployment
 
 ```mermaid
 flowchart LR
-    Dev[git push to main] --> GH[GitHub Actions]
-    GH -->|emcmake + cmake, zip| Zip[site.zip<br/>index.html / .js / .wasm]
-    GH -->|OIDC: assume IAM role,<br/>no stored keys| STS[AWS STS]
-    Zip -->|create-deployment,<br/>upload, start-deployment| AMP[AWS Amplify Hosting]
+    Dev[git push to main] --> Build
+    subgraph GH[GitHub Actions]
+        Build["build job<br/>(no AWS access)<br/>emcmake + cmake, zip"] -->|site.zip artifact| Deploy["deploy job<br/>(only job with OIDC)"]
+    end
+    Deploy -->|OIDC: assume IAM role,<br/>no stored keys| STS[AWS STS]
+    Deploy -->|create-deployment,<br/>upload, start-deployment| AMP[AWS Amplify Hosting]
     AMP -->|HTTPS + CDN| Player[Player's browser]
 ```
 
@@ -142,9 +149,13 @@ flowchart LR
   trusts only this repository's `main` branch.
 - That role can only create, start and check deployments on this one Amplify app. It can't
   change the app, read other resources or touch anything else in the account.
-- Each deploy zips the three build files, uploads them to a pre-signed URL from
-  `amplify create-deployment`, starts the deployment and polls the job until it succeeds or
-  fails, so a bad deploy fails the workflow.
+- **Build and deploy are separate jobs.** All build tooling (Emscripten, CMake, raylib's build
+  scripts) runs in a job that can't request AWS credentials. Only the small deploy job can,
+  and it runs no build code: it takes the finished zip and hands it to Amplify.
+- Each deploy uploads the zip to a pre-signed URL from `amplify create-deployment`, starts the
+  deployment and polls the job until it succeeds or fails, so a bad deploy fails the workflow.
+- **Supply chain:** every GitHub Action is pinned to a full commit SHA rather than a movable
+  tag, and the raylib download is checked against a SHA-256 hash in `CMakeLists.txt`.
 - Amplify Hosting serves the files over HTTPS from its CDN. There's no bucket or distribution
   to manage, and no cache to invalidate.
 - No AWS account IDs, role ARNs or keys are in the repository. The app ID and region are

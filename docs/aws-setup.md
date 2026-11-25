@@ -158,10 +158,28 @@ The role ARN is a **secret** because the repository is public. Actions logs of p
 are public, and variables are printed in them, while secrets are masked. The ARN contains
 the account ID.
 
-The deploy steps in `.github/workflows/deploy.yml` are skipped until `AMPLIFY_APP_ID` is set,
-so the workflow is just a build check until then.
+The workflow has two jobs. **build** compiles the game with read-only repository access and
+no way to get AWS credentials. **deploy** is the only job allowed to request an OIDC token,
+and it only takes the finished zip from the build job and hands it to Amplify. The deploy job
+is skipped until `AMPLIFY_APP_ID` is set, so the workflow is just a build check until then.
 
-## 7. Check it
+## 7. Security headers
+
+The response headers (Content-Security-Policy, HSTS, `nosniff`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`) live in [`web/custom-headers.yml`](../web/custom-headers.yml).
+Apply them once, and again whenever that file changes:
+
+```bash
+aws amplify update-app --app-id <APP_ID> --region ap-south-1 \
+  --custom-headers file://web/custom-headers.yml
+```
+
+They take effect immediately on the current deployment. The CSP blocks inline scripts, so
+only apply it to a build whose page has none: anything built from this repo today. The
+CI deploy role can't change these headers (no `amplify:UpdateApp`), so a compromised
+pipeline can't weaken them.
+
+## 8. Check it
 
 1. **Actions → Build and deploy → Run workflow** (or push to `main`). The *Deploy to Amplify
    Hosting* step should end with `status: SUCCEED`.
@@ -169,7 +187,10 @@ so the workflow is just a build check until then.
    ```bash
    curl -sI https://main.<APP_ID>.amplifyapp.com/ | head -1                                  # HTTP/2 200
    curl -sI https://main.<APP_ID>.amplifyapp.com/index.wasm | grep -i content-type           # application/wasm
+   curl -sI https://main.<APP_ID>.amplifyapp.com/ | grep -i content-security-policy          # the CSP above
    ```
+3. Open the site with the browser console open: the game should run with no
+   "Content Security Policy" errors.
 
 ### If something goes wrong
 
@@ -179,6 +200,7 @@ so the workflow is just a build check until then.
 | `AccessDeniedException` on `amplify:CreateDeployment` | Wrong app ID in the policy resource, or `AMPLIFY_APP_ID` doesn't match the app |
 | `curl` upload fails with 403 | The pre-signed upload URL expired; re-run the workflow |
 | Job ends `FAILED` | The zip doesn't have `index.html` at its root; check the *Package site* step's `unzip -l` listing |
+| Blank page, console shows "Refused to execute inline script" or "violates the following Content Security Policy" | A script or inline handler was added to `shell.html`; move it to `web/pre.js` instead of loosening the CSP |
 | Old version still showing | Hard-refresh the browser; Amplify switches to the new version when the job succeeds |
 
 ## Cost
