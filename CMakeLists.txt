@@ -24,9 +24,12 @@ if(EMSCRIPTEN)
     set(PLATFORM Web CACHE STRING "" FORCE)
 endif()
 
+# The hash pins the exact source: a changed or tampered download fails the
+# build instead of being compiled in.
 FetchContent_Declare(
     raylib
     URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+    URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(raylib)
@@ -56,14 +59,17 @@ target_compile_options(breakout PRIVATE -Wall -Wextra)
 
 if(EMSCRIPTEN)
     set(SHELL_FILE ${CMAKE_SOURCE_DIR}/web/shell.html)
+    set(PRE_JS     ${CMAKE_SOURCE_DIR}/web/pre.js)
     set_target_properties(breakout PROPERTIES
         OUTPUT_NAME index
-        LINK_DEPENDS ${SHELL_FILE}   # relink when the shell page changes
+        LINK_DEPENDS "${SHELL_FILE};${PRE_JS}"   # relink when the page or pre-js changes
     )
     target_link_options(breakout PRIVATE
         -sUSE_GLFW=3
         -sALLOW_MEMORY_GROWTH=1
         -sGL_ENABLE_GET_PROC_ADDRESS=1   # raylib looks up GL functions at runtime
+        -sDYNAMIC_EXECUTION=0            # no eval()/new Function(): needed for a strict CSP
         --shell-file ${SHELL_FILE}
+        --pre-js ${PRE_JS}
     )
 endif()
