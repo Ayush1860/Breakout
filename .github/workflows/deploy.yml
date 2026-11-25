@@ -17,9 +17,11 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       EMSDK_VERSION: 7.0.1   # keep in step with the local toolchain
-      DEPLOY_ENABLED: ${{ vars.S3_BUCKET != '' }}
+      # Deploy only from main (the only ref the AWS role trusts) and once the app is configured.
+      DEPLOY_ENABLED: ${{ vars.AMPLIFY_APP_ID != '' && github.ref == 'refs/heads/main' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -34,13 +36,12 @@ jobs:
           emcmake cmake -B build-web -DCMAKE_BUILD_TYPE=Release
           cmake --build build-web -j
 
-      - name: Collect site files
+      - name: Package site
         run: |
-          mkdir dist
-          cp build-web/index.html build-web/index.js build-web/index.wasm dist/
+          # -j stores the files at the zip root, which is where Amplify expects index.html.
+          zip -j site.zip build-web/index.html build-web/index.js build-web/index.wasm
+          unzip -l site.zip
 
-      # The steps below are skipped until the AWS side exists (docs/aws-setup.md),
-      # so the workflow still works as a build check before then.
       - name: Configure AWS credentials
         if: env.DEPLOY_ENABLED == 'true'
         uses: aws-actions/configure-aws-credentials@v6
@@ -49,16 +50,35 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           mask-aws-account-id: true
 
-      - name: Upload to S3
+      - name: Deploy to Amplify Hosting
         if: env.DEPLOY_ENABLED == 'true'
         env:
-          BUCKET: ${{ vars.S3_BUCKET }}
+          APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          BRANCH: main
         run: |
-          aws s3 sync dist "s3://$BUCKET" --delete --exclude index.wasm
-          aws s3 cp dist/index.wasm "s3://$BUCKET/index.wasm" --content-type application/wasm
+          set -euo pipefail
 
-      - name: Invalidate CloudFront cache
-        if: env.DEPLOY_ENABLED == 'true'
-        env:
-          DISTRIBUTION_ID: ${{ vars.CF_DISTRIBUTION_ID }}
-        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
+          # 1. Ask Amplify for a job and a pre-signed upload URL (not printed).
+          read -r JOB_ID UPLOAD_URL < <(aws amplify create-deployment \
+            --app-id "$APP_ID" --branch-name "$BRANCH" \
+            --query '[jobId, zipUploadUrl]' --output text)
+          echo "Amplify job: $JOB_ID"
+
+          # 2. Upload the zip.
+          curl --fail --silent --show-error -X PUT \
+            -H 'Content-Type: application/zip' --upload-file site.zip "$UPLOAD_URL"
+
+          # 3. Start the deployment and wait for it to finish.
+          aws amplify start-deployment --app-id "$APP_ID" --branch-name "$BRANCH" --job-id "$JOB_ID" > /dev/null
+          while true; do
+            STATUS=$(aws amplify get-job --app-id "$APP_ID" --branch-name "$BRANCH" --job-id "$JOB_ID" \
+              --query 'job.summary.status' --output text)
+            echo "status: $STATUS"
+            case "$STATUS" in
+              SUCCEED) break ;;
+              FAILED|CANCELLED) echo "::error::Amplify deployment $JOB_ID ended with status $STATUS"; exit 1 ;;
+            esac
+            sleep 10
+          done
+
+          echo "Live at https://$BRANCH.$APP_ID.amplifyapp.com"

@@ -1,9 +1,9 @@
 # Breakout
 
 A small, polished Breakout game in modern C++17 and raylib, compiled to WebAssembly and
-served from AWS (S3 + CloudFront), with every push to `main` deployed by GitHub Actions.
+hosted on AWS Amplify Hosting, with every push to `main` deployed by GitHub Actions.
 
-**[▶ Play now](https://YOUR-DISTRIBUTION.cloudfront.net)**
+**[▶ Play now](https://main.d1h0spgv1b4kq3.amplifyapp.com)**
 
 <!-- Gameplay GIF goes here: docs/gameplay.gif -->
 
@@ -132,23 +132,25 @@ copy and move operations, so a derived object can't be sliced through the base.
 ```mermaid
 flowchart LR
     Dev[git push to main] --> GH[GitHub Actions]
-    GH -->|emcmake + cmake| Build[index.html / .js / .wasm]
-    GH -->|OIDC: assume IAM role,<br/>no stored keys| AWS[(AWS)]
-    Build -->|aws s3 sync| S3[Private S3 bucket]
-    GH -->|create-invalidation| CF[CloudFront]
-    S3 -->|Origin Access Control| CF
-    CF -->|HTTPS| Player[Player's browser]
+    GH -->|emcmake + cmake, zip| Zip[site.zip<br/>index.html / .js / .wasm]
+    GH -->|OIDC: assume IAM role,<br/>no stored keys| STS[AWS STS]
+    Zip -->|create-deployment,<br/>upload, start-deployment| AMP[AWS Amplify Hosting]
+    AMP -->|HTTPS + CDN| Player[Player's browser]
 ```
 
-- The S3 bucket is private, with public access blocked. Only this CloudFront distribution can
-  read it, through Origin Access Control.
-- GitHub Actions authenticates with OIDC. The IAM role trusts only this repository's `main`
-  branch and can only write to this bucket and invalidate this distribution.
-- `index.wasm` is uploaded with `Content-Type: application/wasm`, so browsers can stream-compile it.
-- No AWS account IDs, ARNs or keys are in the repository. They live in GitHub repository
-  variables and secrets.
+- GitHub Actions authenticates with OIDC and gets short-lived credentials. The IAM role
+  trusts only this repository's `main` branch.
+- That role can only create, start and check deployments on this one Amplify app. It can't
+  change the app, read other resources or touch anything else in the account.
+- Each deploy zips the three build files, uploads them to a pre-signed URL from
+  `amplify create-deployment`, starts the deployment and polls the job until it succeeds or
+  fails, so a bad deploy fails the workflow.
+- Amplify Hosting serves the files over HTTPS from its CDN. There's no bucket or distribution
+  to manage, and no cache to invalidate.
+- No AWS account IDs, role ARNs or keys are in the repository. The app ID and region are
+  GitHub repository variables, and the role ARN is a secret.
 
-Step-by-step console setup: [docs/aws-setup.md](docs/aws-setup.md).
+Setup steps: [docs/aws-setup.md](docs/aws-setup.md).
 
 ## Possible future work
 
